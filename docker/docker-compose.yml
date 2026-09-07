@@ -1,0 +1,63 @@
+services:
+
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: matrix
+      MINIO_ROOT_PASSWORD: matrix123
+    ports:
+      - "9010:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - lake
+
+
+
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    depends_on:
+      - minio
+    networks:
+      - lake
+    entrypoint: >
+      /bin/sh -c "
+      until (mc alias set local http://minio:9000 matrix matrix123) do echo 'minio gozlenilir...' && sleep 2; done;
+      mc mb -p local/warehouse;
+      mc mb -p local/warehouse/delta;
+      mc mb -p local/warehouse/iceberg;
+      exit 0;
+      "
+
+
+  jupyter:
+    image: jupyter/pyspark-notebook:latest
+    container_name: jupyter
+    depends_on:
+      - minio
+      - minio-init
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./jupyter_server_config.py:/home/jovyan/.jupyter/jupyter_server_config.py
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      PYSPARK_SUBMIT_ARGS: "--packages io.delta:delta-spark_2.12:3.2.0,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.11.0,org.apache.iceberg:iceberg-aws-bundle:1.11.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 pyspark-shell"
+    networks:
+      - lake
+
+
+networks:
+  lake:
+
+
+volumes:
+  minio_data:
+
